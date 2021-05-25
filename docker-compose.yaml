@@ -1,0 +1,44 @@
+---
+version: '3'
+
+services:
+  node_exporter:
+    image: quay.io/prometheus/node-exporter:latest
+    container_name: node_exporter
+    command:
+      - '--path.rootfs=/host --collector.systemd --collector.processes'
+    ports:
+      - 9100:9100/tcp
+    pid: host
+    restart: unless-stopped
+    volumes:
+      - /:/host:ro,rslave
+  haproxy:
+    image: docker.io/haproxy:2.4-alpine
+    ports:
+      - 80:8080/tcp
+      - 443:8443/tcp
+    restart: unless-stopped
+    volumes:
+      - /etc/haproxy/haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
+      - /etc/pki/tls/private/tls.pem:/etc/ssl/private/tls.pem:ro
+  prometheus:
+    image: quay.io/prometheus/prometheus:v2.27.1
+    ports:
+      - 9090:9090/tcp
+    restart: unless-stopped
+    volumes:
+      - /var/lib/monitoring/prometheus:/prometheus
+      - /etc/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+  grafana:
+    image: docker.io/grafana/grafana:7.5.7
+    ports: [] # Use HAProxy
+    restart: unless-stopped
+    environment:
+      - GF_AUTH_LDAP_ENABLED=true
+      - GF_AUTH_LDAP_CONFIG_FILE=/etc/grafana/ldap.toml
+    volumes:
+      - /var/lib/monitoring/grafana:/var/lib/grafana
+      - /etc/grafana/grafana.ini:/etc/grafana/conf/grafana.ini:ro
+      - /etc/grafana/ldap.toml:/etc/grafana/ldap.toml:ro
+      - /etc/grafana/provisioning:/etc/grafana/provisioning

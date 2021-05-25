@@ -1,0 +1,66 @@
+#!/bin/sh
+
+# Alex Wicks, 2021
+# Deploy monitoring stack with docker-compose.
+# Create configuration files from m4 templates included.
+# Variables populated from 'env' file.
+
+SCRIPT=$(readlink -f "$0")
+SCRIPT_PATH=$(dirname "$SCRIPT")
+source "${SCRIPT_PATH}/env"
+
+# Check everything is defined
+if [ -z "$SSL_CERT_PATH" ]; then echo 'SSL_CERT_PATH undefined' && exit 1; fi
+if [ -z "$GRAFANA_VHOST" ]; then echo 'GRAFANA_VHOST undefined' && exit 2; fi
+if [ -z "$LDAP_SRV1" ]; then echo 'LDAP_SRV1 undefined' && exit 3; fi
+if [ -z "$LDAP_SRV2" ]; then echo 'LDAP_SRV2 undefined' && exit 4; fi
+if [ -z "$LDAP_PORT" ]; then echo 'LDAP_PORT undefined' && exit 5; fi
+if [ -z "$LDAP_BIND_DN" ]; then echo 'LDAP_BIND_DN undefined' && exit 6; fi
+if [ -z "$LDAP_BIND_PASSWD" ]; then echo 'LDAP_BIND_PASSWD undefined' && exit 7; fi
+if [ -z "$LDAP_BASE_DN" ]; then echo 'LDAP_BASE_DN undefined' && exit 8; fi
+if [ -z "$LDAP_ADMIN_DN" ]; then echo 'LDAP_ADMIN_DN undefined' && exit 9; fi
+
+# Render templates
+m4 \
+  "-DSSL_CERT_PATH=${SSL_CERT_PATH}" \
+  "-DGRAFANA_VHOST=${GRAFANA_VHOST}" \
+  "${SCRIPT_PATH}/haproxy.cfg.m4" \
+  > "${SCRIPT_PATH}/haproxy.cfg"
+
+m4 \
+  "-DGRAFANA_VHOST=${GRAFANA_VHOST}" \
+  "${SCRIPT_PATH}/grafana.ini.m4" \
+  > "${SCRIPT_PATH}/grafana.ini"
+
+m4 \
+  "-DLDAP_SRV1=${LDAP_SRV1}" \
+  "-DLDAP_SRV2=${LDAP_SRV2}" \
+  "-DLDAP_PORT=${LDAP_PORT}" \
+  "-DLDAP_BIND_DN=${LDAP_BIND_DN}" \
+  "-DLDAP_BIND_PASSWD=${LDAP_BIND_PASSWD}" \
+  "-DLDAP_BASE_DN=${LDAP_BASE_DN}" \
+  "-DLDAP_ADMIN_DN=${LDAP_ADMIN_DN}" \
+  "${SCRIPT_PATH}/ldap.toml.m4" \
+  > "${SCRIPT_PATH}/ldap.toml"
+
+# Install Grafana config
+install -o root -m755 -d /etc/grafana
+install -o 472 -g 0 -m755 -d /etc/grafana/provisioning
+install -o root -m644 -D "${SCRIPT_PATH}/grafana.ini" /etc/grafana
+install -o root -m644 -D "${SCRIPT_PATH}/ldap.toml" /etc/grafana
+# Install HAProxy config
+install -o root -m755 -d /etc/haproxy
+install -o root -m644 -D "${SCRIPT_PATH}/haproxy.cfg" /etc/haproxy
+# Install Prometheus config
+install -o root -m755 -d /etc/prometheus
+install -o root -m644 -D "${SCRIPT_PATH}/prometheus.yml" /etc/prometheus
+
+# Let's clean up
+rm "${SCRIPT_PATH}/grafana.ini" "${SCRIPT_PATH}/ldap.toml" "${SCRIPT_PATH}/haproxy.cfg"
+
+# Create directories for persistence
+install -o 472 -g 0 -m755 -d /var/lib/monitoring/grafana
+install -o 65534 -g 65534 -m755 -d /var/lib/monitoring/prometheus
+
+# Bring all the services up
+docker-compose up -d
